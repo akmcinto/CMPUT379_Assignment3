@@ -282,15 +282,13 @@ int readconfigfile(char *cmdarg) {
 
 // Kill any previous instances of procnanny
 void killprevprocnanny() {
-  char pgrepcmd[20]; // for creating pgrep command (255 plus extra for command)
   FILE *pni;
   pid_t procnanid;
   pid_t mypid = getpid();
   int killval;
 
   // Find PIDs for the program
-  sprintf(pgrepcmd, "pgrep %s", "procnanny.client");
-  pni = popen(pgrepcmd, "r");
+  pni = popen("ps -C procnanny.client -o pid=", "r");
   
   while (fscanf(pni, "%d", &procnanid) != EOF) {
     if (procnanid != mypid) {

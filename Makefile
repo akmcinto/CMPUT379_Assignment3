@@ -4,4 +4,4 @@ procnanny_server: procnanny_server.c
 
 .PHONY: clean
 clean:
-	-rm -f procnanny *.o core
+	-rm -f procnanny.server procnanny.client *.o core
