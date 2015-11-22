@@ -50,3 +50,4 @@ Matt Joiner, http://stackoverflow.com/questions/1735781/non-blocking-pipe-using-
 http://www.tutorialspoint.com/c_standard_library/c_function_strcmp.htm, 2015-11-03
 NPE, http://stackoverflow.com/questions/10625852/error-in-assigning-an-array-to-the-other-in-c, 2015-11-08
 http://www.tutorialspoint.com/c_standard_library/c_function_signal.htm, 2015-11-10
+http://linux.die.net/man/2/gethostname, 2015-11-21

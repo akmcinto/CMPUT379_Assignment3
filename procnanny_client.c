@@ -7,17 +7,22 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
 #include "memwatch.h"
 
 /*********************** Client ***********************/
 
 void killprevprocnanny( void );
-void runmonitoring( char *, FILE * );
+void runmonitoring( FILE * );
 void forkfunc(pid_t procid, int numsecs, int pipefd[2], int returnpipefd[2]);
 int readconfigfile(char *cmdarg);
 int getpids(char procname[128][255], int index, FILE *LOGFILE);
-void handlesighup(int signum);
-void handlesigint(int signum);
+
+uint16_t MYPORT = 0; // bind to any free port
+uint16_t serverport;
+char *servername;
 
 // Global variable declarations
 pid_t childpids[128]; // Save pids of all existing child processes
@@ -32,33 +37,28 @@ char alreadyreported[128][255];  // Saved names of programs already reported to 
   
 size_t returnmesssize = sizeof(char)*7;  // Size of message child pipes to parent
 
-// Signal flags
-int hupflag = 1;
-int hupmess = 0;
 int inthandle = 0;
+
 
 int main(int argc, char *argv[])
 {
   mwInit();
 
-  // Log file
-  char *logloc = getenv("PROCNANNYLOGS");
-  FILE *LOGFILE = fopen(logloc, "w");
-
-  signal(SIGHUP, handlesighup);
-  signal(SIGINT, handlesigint);
-
   // kill any other procnannies
   killprevprocnanny();
 
+  // Log file - REMOVE
+  char *logloc = getenv("PROCNANNYLOGS");
+  FILE *LOGFILE = fopen(logloc, "w");
+
   // Set up monitoring
-  runmonitoring(argv[1], LOGFILE);
+  runmonitoring(LOGFILE);
 
   exit(0);
 }
 
 // Read config file, monitor pids, handle signals, print info to log file
-void runmonitoring(char *cmdarg, FILE *LOGFILE) {
+void runmonitoring(FILE *LOGFILE) {
   
   char procnamesforlog[128][255];  // Array for holding each line of the file read in
   int numsecsperprocess[128]; // Will contain amounts of time per pid, not just process name
@@ -73,9 +73,29 @@ void runmonitoring(char *cmdarg, FILE *LOGFILE) {
   ssize_t main_readreturn;
   char rmessage[returnmesssize];
 
-  time(&currtime);
-  fprintf(LOGFILE, "[%.*s] Info: Parent process is PID %d\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), getpid());
-  fflush(LOGFILE);
+  struct sockaddr_in server;
+  struct hostent *host;
+
+  // Get server info from input
+  servername = argv[1];
+  serverport = *argv[2];
+
+  host = gethostbyname (servername);
+
+  int sock = socket(AF_INET, SOCK_STREAM, 0);
+  if (sock < 0) {
+    perror ("Client: cannot open socket");
+    exit (1);
+  }
+  bzero(&server, sizeof(server));
+  bcopy(host->h_addr, & (server.sin_addr), host->h_length);
+  server.sin_family = host->h_addrtype;
+  server.sin_port = htons(MYPORT);
+
+  if (connect (sock, (struct sockaddr*) & server, sizeof (server))) {
+    perror ("Producer: cannot connect to server");
+    exit (1);
+  }
   
   childcount = 0;
 
@@ -107,20 +127,6 @@ void runmonitoring(char *cmdarg, FILE *LOGFILE) {
       } else {
 	// Pipe closed
       }
-    }
-
-    // Read each line of config file, count is number of lines read (number of process names)
-    if (hupflag == 1) {
-      if (hupmess == 1) {
-	time(&currtime);
-	fprintf(LOGFILE, "[%.*s] Info: Caught SIGHUP.  Configuration file '%s' re-read.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), cmdarg);
-	fflush(LOGFILE);
-
-	printf("[%.*s] Info: Caught SIGHUP.  Configuration file '%s' re-read.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), cmdarg);
-	hupmess = 0;
-      }
-      count = readconfigfile(cmdarg);
-      hupflag = 0;
     }
 
     for (k = 0; k < count; k++) { // names
@@ -300,13 +306,3 @@ void killprevprocnanny() {
   }
   return;
 }
-
-void handlesighup(int signum) {
-  hupflag = 1;
-  hupmess = 1;
-}
-
-void handlesigint(int signum) {
-  inthandle = 1;
-}
-
