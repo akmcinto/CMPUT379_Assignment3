@@ -51,6 +51,10 @@ int main(int argc, char *argv[])
   char *logloc = getenv("PROCNANNYLOGS");
   FILE *LOGFILE = fopen(logloc, "w");
 
+  // Get server info from input
+  servername = argv[1];
+  serverport = *argv[2];
+
   // Set up monitoring
   runmonitoring(LOGFILE);
 
@@ -76,13 +80,10 @@ void runmonitoring(FILE *LOGFILE) {
   struct sockaddr_in server;
   struct hostent *host;
 
-  // Get server info from input
-  servername = argv[1];
-  serverport = *argv[2];
-
-  host = gethostbyname (servername);
+  host = gethostbyname(servername);
 
   int sock = socket(AF_INET, SOCK_STREAM, 0);
+  //fcntl(sock, F_SETFL, O_NONBLOCK);
   if (sock < 0) {
     perror ("Client: cannot open socket");
     exit (1);
@@ -90,7 +91,7 @@ void runmonitoring(FILE *LOGFILE) {
   bzero(&server, sizeof(server));
   bcopy(host->h_addr, & (server.sin_addr), host->h_length);
   server.sin_family = host->h_addrtype;
-  server.sin_port = htons(MYPORT);
+  server.sin_port = htons(serverport);
 
   if (connect (sock, (struct sockaddr*) & server, sizeof (server))) {
     perror ("Producer: cannot connect to server");
@@ -129,7 +130,13 @@ void runmonitoring(FILE *LOGFILE) {
       }
     }
 
+    // Get number of processes off of socket
+    read(sock, &count, sizeof(int));
+
     for (k = 0; k < count; k++) { // names
+      read(sock, &procname, 255);
+      read(sock, &numsecs, sizeof(int));
+
       // Get corrensponding pids
       pidcount = getpids(procname, k, LOGFILE);
 

@@ -20,7 +20,7 @@ void handlesigint(int signum);
 int read_from_client (int filedes);
 int make_socket(uint16_t port);
 
-uint16_t PORT =  0; // bind to any free port
+uint16_t PORT =  5000; // bind to any free port
 int MAXMSG = 512;
   
 char procname[128][255]; // for saving read from file
@@ -124,6 +124,13 @@ int main(int argc, char *argv[])
 		   "Server: connect from host %s, port %hd.\n",
 		   name, PORT);
 	  FD_SET (new, &active_fd_set);
+
+	  write(sock, &count, sizeof(count));
+	  int i;
+	  for (i = 0; i < count; i++) {
+	    write(sock, &procname[count], 255);
+	    write(sock, &numsecs[count], sizeof(int));
+	  }
 	}
 	else {
 	  /* Data arriving on an already-connected socket. */
