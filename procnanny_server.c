@@ -40,7 +40,7 @@ int main(int argc, char *argv[])
 
   // Select variables
   int sock;
-  fd_set active_fd_set, read_fd_set;
+  fd_set active_fd_set, read_fd_set, write_fd_set;
   int i;
   struct sockaddr_in clientname;
   size_t size;
@@ -79,6 +79,10 @@ int main(int argc, char *argv[])
     exit (EXIT_FAILURE);
   }
 
+  if (listen(sock, 3) == -1) {
+    perror("listen failed");
+  }
+
   /* Initialize the set of active sockets. */
   FD_ZERO(&active_fd_set);
   FD_SET(sock, &active_fd_set);
@@ -101,15 +105,20 @@ int main(int argc, char *argv[])
 
     /* Block until input arrives on one or more active sockets. */
     read_fd_set = active_fd_set;
-    if (select (FD_SETSIZE, &read_fd_set, NULL, NULL, NULL) < 0) {
+    write_fd_set = active_fd_set;
+    if (select (FD_SETSIZE, &read_fd_set, &write_fd_set, NULL, NULL) < 0) {
       perror ("select");
       exit (EXIT_FAILURE);
     }
+    printf("!!\n");
 
     /* Service all the sockets with input pending. */
     for (i = 0; i < FD_SETSIZE; ++i) {
+      //printf("%d %d!\n", sock, i);
       if (FD_ISSET (i, &read_fd_set)) {
+	//printf("!!\n");
 	if (i == sock) {
+	  //printf("!!!\n");
 	  /* Connection request on original socket. */
 	  int new;
 	  size = sizeof (clientname);
@@ -117,31 +126,63 @@ int main(int argc, char *argv[])
 			(struct sockaddr *) &clientname,
 			&size);
 	  if (new < 0) {
-	      perror ("accept");
-	      exit (EXIT_FAILURE);
-	    }
+	    perror ("accept");
+	    exit (EXIT_FAILURE);
+	  }
+	  fprintf (stderr,
+		   "Server: connect from host %s, port %hd.\n",
+		   name, PORT);
+	  FD_SET (new, &active_fd_set);
+	}
+	
+	else {
+	  /* Data arriving on an already-connected socket. */
+	  if (read_from_client(i) < 0) {
+	    close (i);
+	    FD_CLR (i, &active_fd_set);
+	  } 
+	}
+      }
+      
+      if (FD_ISSET (i, &write_fd_set)) {
+	//printf("!!\n");
+	if (i == sock) {
+	  //printf("!!!\n");
+	  /* Connection request on original socket. */
+	  int new;
+	  size = sizeof (clientname);
+	  new = accept (sock,
+			(struct sockaddr *) &clientname,
+			&size);
+	  if (new < 0) {
+	    perror ("accept");
+	    exit (EXIT_FAILURE);
+	  }
 	  fprintf (stderr,
 		   "Server: connect from host %s, port %hd.\n",
 		   name, PORT);
 	  FD_SET (new, &active_fd_set);
 
-	  write(sock, &count, sizeof(count));
-	  int i;
-	  for (i = 0; i < count; i++) {
-	    write(sock, &procname[count], 255);
-	    write(sock, &numsecs[count], sizeof(int));
+	  write(new, &count, sizeof(count));
+	  int j;
+	  for (j = 0; j < count; j++) {
+	    write(i, &procname[j], 255);
+	    write(i, &numsecs[j], sizeof(int));
 	  }
 	}
 	else {
-	  /* Data arriving on an already-connected socket. */
-	  if (read_from_client (i) < 0) {
-	      close (i);
-	      FD_CLR (i, &active_fd_set);
-	    }
+	  //printf("!!!!\n");
+	  write(i, &count, sizeof(count));
+	  int j;
+	  for (j = 0; j < count; j++) {
+	    write(i, &procname[j], 255);
+	    write(i, &numsecs[j], sizeof(int));
+	  }
 	}
       }
     }
   }
+
 
   mwTerm();
   exit(0);

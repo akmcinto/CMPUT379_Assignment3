@@ -20,6 +20,7 @@ void forkfunc(pid_t procid, int numsecs, int pipefd[2], int returnpipefd[2]);
 int readconfigfile(char *cmdarg);
 int getpids(char procname[128][255], int index, FILE *LOGFILE);
 
+int MAXMSG = 512;
 uint16_t MYPORT = 0; // bind to any free port
 uint16_t serverport;
 char *servername;
@@ -76,6 +77,7 @@ void runmonitoring(FILE *LOGFILE) {
   int returnpipefds[128][2];
   ssize_t main_readreturn;
   char rmessage[returnmesssize];
+  char sockmess[MAXMSG];
 
   struct sockaddr_in server;
   struct hostent *host;
@@ -97,6 +99,8 @@ void runmonitoring(FILE *LOGFILE) {
     perror ("Producer: cannot connect to server");
     exit (1);
   }
+
+  write(sock, "Hello\n", 6);
   
   childcount = 0;
 
@@ -117,8 +121,8 @@ void runmonitoring(FILE *LOGFILE) {
 	  killcount++;
 	  // Write message to logfile 
 	  time(&currtime);
-	  fprintf(LOGFILE, "[%.*s] Action: PID %d (%s) killed after exceeding %d seconds.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), allprocids[i], procnamesforlog[i], numsecsperprocess[i]);
-	  fflush(LOGFILE);
+	  sprintf(sockmess, "[%.*s] Action: PID %d (%s) killed after exceeding %d seconds.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), allprocids[i], procnamesforlog[i], numsecsperprocess[i]);
+	  write(sock, &sockmess, MAXMSG);
 	}
 	// Add child pid to list of available ones
 	freeindex++;
@@ -131,7 +135,10 @@ void runmonitoring(FILE *LOGFILE) {
     }
 
     // Get number of processes off of socket
+    printf("Here!\n");
     read(sock, &count, sizeof(int));
+    printf("Here!!\n");
+    printf("%d\n", count);
 
     for (k = 0; k < count; k++) { // names
       read(sock, &procname, 255);

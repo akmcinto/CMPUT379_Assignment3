@@ -51,3 +51,8 @@ http://www.tutorialspoint.com/c_standard_library/c_function_strcmp.htm, 2015-11-
 NPE, http://stackoverflow.com/questions/10625852/error-in-assigning-an-array-to-the-other-in-c, 2015-11-08
 http://www.tutorialspoint.com/c_standard_library/c_function_signal.htm, 2015-11-10
 http://linux.die.net/man/2/gethostname, 2015-11-21
+http://man7.org/linux/man-pages/man3/gethostbyname.3.html, 2015-11-21
+
+Select code taken from:
+http://www.gnu.org/software/libc/manual/html_node/Server-Example.html, 2015-11-21
+http://www.gnu.org/software/libc/manual/html_node/Inet-Example.html#Inet-Example, 2015-11-21
