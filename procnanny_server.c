@@ -21,7 +21,7 @@ int read_from_client (int filedes);
 int make_socket(uint16_t port);
 
 uint16_t PORT =  2692; // bind to any free port
-int MAXMSG = 512;
+int MAXMSG = 256;
   
 char procname[128][255]; // for saving read from file
 int numsecs[128];
@@ -64,6 +64,9 @@ int main(int argc, char *argv[])
   size_t size;
   int count; // Number of programs in config file
 
+  int clients[36];
+  int nclients = 0;
+
   time_t currtime;
   // Log file
   char *logloc = getenv("PROCNANNYLOGS");
@@ -88,7 +91,7 @@ int main(int argc, char *argv[])
   signal(SIGHUP, handlesighup);
   signal(SIGINT, handlesigint);
 
-count = readconfigfile(argv[1]);
+  count = readconfigfile(argv[1]);
 
   // Socket select
   // Code from http://www.gnu.org/software/libc/manual/html_node/Server-Example.html
@@ -105,11 +108,20 @@ count = readconfigfile(argv[1]);
   if (bind(sock, (struct sockaddr *) &sockname, sizeof(sockname)) == -1)
     perror("bind failed");
 
-  if (listen(sock,3) == -1)
+  if (listen(sock,36) == -1)
     perror("listen failed");
 
   printf("Server up and listening for connections on port %d\n",
 	 getPortNumber( sock ) );
+
+
+  /* Initialize the set of active sockets. */
+  FD_ZERO(&active_fd_set);
+  FD_SET(sock, &active_fd_set);
+
+  /* Block until input arrives on one or more active sockets. */
+  read_fd_set = active_fd_set;
+  write_fd_set = active_fd_set;
 
   while (1) {
 
@@ -127,98 +139,122 @@ count = readconfigfile(argv[1]);
       hupflag = 0;
     }
 
-    /* Initialize the set of active sockets. */
-    FD_ZERO(&active_fd_set);
-    FD_SET(sock, &active_fd_set);
-
-    /* Block until input arrives on one or more active sockets. */
-    read_fd_set = active_fd_set;
-    write_fd_set = active_fd_set;
+    struct timeval timeout;
+      timeout.tv_sec = 5;
+      timeout.tv_usec = 0;
     if (select (FD_SETSIZE, &read_fd_set, &write_fd_set, NULL, NULL) < 0) {
       perror ("select");
       exit (EXIT_FAILURE);
     }
 
     /* Service all the sockets with input pending. */
-    int i;
-    for (i = 0; i < FD_SETSIZE; ++i) {
-      if (FD_ISSET (i, &read_fd_set)) {
-
+    //int i;
+    //for (i = 0; i < FD_SETSIZE; ++i) {
+      if (FD_ISSET (sock, &read_fd_set)) {
 	/*char mess[25];
 	  read (sock, &mess, 25);
 	  printf("%s\n", mess);
 	  sleep(2);*/
 	
-	if (i == sock) {
+	//if (i == sock) {
 	  /* Connection request on original socket. */
 	  int new;
 	  size = sizeof (clientname);
-	  new = accept (sock,
+	  clients[nclients] = accept (sock,
 			(struct sockaddr *) &clientname,
 			&size);
-	  if (new < 0) {
+	  if (clients[nclients] < 0) {
 	    perror ("accept");
 	    exit (EXIT_FAILURE);
 	  }
 	  fprintf (stderr,
 		   "Server: connect from host %s, port %hd.\n",
 		   name, PORT);
-	  FD_SET (new, &active_fd_set);
+	  FD_SET (clients[nclients], &active_fd_set);
 
-	  write(new, &count, sizeof(count));
+	  write(clients[nclients], &count, sizeof(count));
 	  int j;
 	  for (j = 0; j < count; j++) {
-	    write(new, &procname[j], 255);
-	    write(new, &numsecs[j], sizeof(int));
+	    write(clients[nclients], &procname[j], 255);
+	    write(clients[nclients], &numsecs[j], sizeof(int));
 	  }
-	}
-	
-	else {
-	  /* Data arriving on an already-connected socket. */
-	  char buffer[MAXMSG];
 
-read (i, buffer, MAXMSG);
+	  nclients++;
+
+	  //}
+	
+	/*else {
+	  // Data arriving on an already-connected socket. 
+	  char buffer[MAXMSG];
+	  printf("Here\n");
+	  read (i, buffer, MAXMSG);
+	  printf("Now\n");
 
 	  fprintf(LOGFILE, "%s\n", buffer);
-
-
-	}
-      }
+	}*/
+	//}
       
-      if (FD_ISSET (i, &write_fd_set)) {
+      /*if (FD_ISSET (i, &write_fd_set)) {
 	if (i == sock) {
-	  /* Connection request on original socket. */
-	  int new;
-	  size = sizeof (clientname);
-	  new = accept (sock,
-			(struct sockaddr *) &clientname,
-			&size);
-	  if (new < 0) {
-	    perror ("accept");
-	    exit (EXIT_FAILURE);
-	  }
-	  fprintf (stderr,
-		   "Server: connect from host %s, port %hd.\n",
-		   name, PORT);
-	  FD_SET (new, &active_fd_set);
+	// Connection request on original socket. 
+	int new;
+	size = sizeof (clientname);
+	new = accept (sock,
+	(struct sockaddr *) &clientname,
+	&size);
+	if (new < 0) {
+	perror ("accept");
+	exit (EXIT_FAILURE);
+	}
+	fprintf (stderr,
+	"Server: connect from host %s, port %hd.\n",
+	name, PORT);
+	FD_SET (new, &active_fd_set);
 
-	  write(new, &count, sizeof(count));
-	  int j;
-	  for (j = 0; j < count; j++) {
-	    write(i, &procname[j], 255);
-	    write(i, &numsecs[j], sizeof(int));
-	  }
+	write(new, &count, sizeof(count));
+	int j;
+	for (j = 0; j < count; j++) {
+	write(i, &procname[j], 255);
+	write(i, &numsecs[j], sizeof(int));
+	}
 	}
 	else {
-	  write(i, &count, sizeof(count));
+	write(i, &count, sizeof(count));
+	int j;
+	for (j = 0; j < count; j++) {
+	write(i, &procname[j], 255);
+	write(i, &numsecs[j], sizeof(int));
+	}
+	}
+	}*/
+    }
+
+
+      int h;
+      for(h = 0; h < nclients; h++) {
+
+	if (FD_ISSET (clients [h], &write_fd_set)) {
+	  write(clients[h], &count, sizeof(count));
 	  int j;
 	  for (j = 0; j < count; j++) {
-	    write(i, &procname[j], 255);
-	    write(i, &numsecs[j], sizeof(int));
+	    write(clients[h], &procname[j], 255);
+	    write(clients[h], &numsecs[j], sizeof(int));
 	  }
 	}
       }
-    }
+
+      for(h = 0; h < nclients; h++) {
+
+	if (FD_ISSET (clients [h], &read_fd_set)) {
+	  char buffer[MAXMSG];
+	  printf("Here\n");
+	  read (clients [h], buffer, MAXMSG);
+	  printf("Now\n");
+
+	  fprintf(LOGFILE, "%s\n", buffer);
+	}
+      }
+
   }
 
 
@@ -272,9 +308,9 @@ void handlesigint(int signum) {
 // From http://www.gnu.org/software/libc/manual/html_node/Server-Example.html
 int read_from_client (int filedes) {
   char buffer[MAXMSG];
-	  int nbytes;
+  int nbytes;
 
-	  nbytes = read (filedes, buffer, MAXMSG);
+  nbytes = read (filedes, buffer, MAXMSG);
 
   if (nbytes < 0)
     {

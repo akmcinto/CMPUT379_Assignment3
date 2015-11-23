@@ -20,7 +20,7 @@ void forkfunc(pid_t procid, int numsecs, int pipefd[2], int returnpipefd[2]);
 int readconfigfile(char *cmdarg);
 int getpids(char procname[255], int index, FILE *LOGFILE);
 
-int MAXMSG = 512;
+int MAXMSG = 256;
 uint16_t MYPORT = 2692; // bind to any free port
 int serverport;
 char *servername;
@@ -125,7 +125,8 @@ void runmonitoring(FILE *LOGFILE) {
 	  // Write message to logfile 
 	  time(&currtime);
 	  sprintf(sockmess, "[%.*s] Action: PID %d (%s) killed after exceeding %d seconds.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), allprocids[i], procnamesforlog[i], numsecsperprocess[i]);
-	  /* write(sock, &sockmess, MAXMSG); */
+	  
+	  write(sock, &sockmess, MAXMSG);
 	}
 	// Add child pid to list of available ones
 	freeindex++;
@@ -162,8 +163,9 @@ void runmonitoring(FILE *LOGFILE) {
 	  time(&currtime);
 	  /*fprintf(LOGFILE, "[%.*s] Info: Initializing monitoring of process %s (PID %d).\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), procname, procid[j]);
 	    fflush(LOGFILE);*/
-sprintf(sockmess, "[%.*s] Info: Initializing monitoring of process %s (PID %d).\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), procname, procid[j]);
-write(sock, &sockmess, MAXMSG);
+	  sprintf(sockmess, "[%.*s] Info: Initializing monitoring of process %s (PID %d).\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), procname, procid[j]);
+
+	  write(sock, &sockmess, MAXMSG);
 
 	  if (freeindex > -1) {
 	    allprocids[freeindices[freeindex]] = procid[j];
