@@ -15,10 +15,11 @@
 /*********************** Client ***********************/
 
 void killprevprocnanny( void );
-void runmonitoring( FILE * );
+void runmonitoring();
 void forkfunc(pid_t procid, int numsecs, int pipefd[2], int returnpipefd[2]);
 int readconfigfile(char *cmdarg);
 int getpids(char procname[255], int index, int sock);
+void die(int pipefds[128][2], int returnpipefds[128][2], int killcount, int sock);
 
 int MAXMSG = 256;
 uint16_t MYPORT = 2692; // bind to any free port
@@ -38,8 +39,6 @@ char alreadyreported[128][255];  // Saved names of programs already reported to 
   
 size_t returnmesssize = sizeof(char)*7;  // Size of message child pipes to parent
 
-int inthandle = 0;
-
 
 int main(int argc, char *argv[])
 {
@@ -48,22 +47,18 @@ int main(int argc, char *argv[])
   // kill any other procnannies
   killprevprocnanny();
 
-  // Log file - REMOVE
-  char *logloc = getenv("PROCNANNYLOGS");
-  FILE *LOGFILE = fopen(logloc, "w");
-
   // Get server info from input
   servername = argv[1];
-  serverport = *argv[2];
+  serverport = atoi(argv[2]);
 
   // Set up monitoring
-  runmonitoring(LOGFILE);
+  runmonitoring();
 
   exit(0);
 }
 
 // Read config file, monitor pids, handle signals, print info to log file
-void runmonitoring(FILE *LOGFILE) {
+void runmonitoring() {
   
   char procnamesforlog[128][255];  // Array for holding each line of the file read in
   int numsecsperprocess[128]; // Will contain amounts of time per pid, not just process name
@@ -98,7 +93,7 @@ void runmonitoring(FILE *LOGFILE) {
   bzero(&server, sizeof(server));
   bcopy(host->h_addr, & (server.sin_addr), host->h_length);
   server.sin_family = host->h_addrtype;
-  server.sin_port = htons(MYPORT);
+  server.sin_port = htons(serverport);
 
   if (connect (sock, (struct sockaddr*) & server, sizeof (server))) {
     perror ("Producer: cannot connect to server");
@@ -139,11 +134,16 @@ void runmonitoring(FILE *LOGFILE) {
     }
 
     // Get number of processes off of socket
-    read(sock, &count, sizeof(int));
-
+    while (count == 0) {    
+      read(sock, &count, sizeof(int));
+    }
     for (k = 0; k < count; k++) { // names
-      read(sock, &procname, 255);
+      read(sock, &procname, sizeof(procname));
       read(sock, &numsecs, sizeof(int));
+
+      if (strcmp(procname, "kill") == 0) {
+	die(pipefds, returnpipefds, killcount, sock);
+      }
 
       // Get corrensponding pids
       pidcount = getpids(procname, k, sock);
@@ -199,29 +199,32 @@ void runmonitoring(FILE *LOGFILE) {
     }
 
     sleep(5);
-  
-    if (inthandle == 1) {
-      int o;
-      for (o = 0; o < childcount; o++) {
-	kill(childpids[o], SIGKILL);
-	close(pipefds[childcount][0]);
-	close(pipefds[childcount][1]);
-	close(returnpipefds[childcount][0]);
-	close(returnpipefds[childcount][1]);
-      }
 
-      time(&currtime);
-      fprintf(LOGFILE, "[%.*s] Info: Caught SIGINT.  Exiting cleanly. %d process(es) killed.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), killcount);
-      fflush(LOGFILE);
-
-      printf("[%.*s] Info: Caught SIGINT.  Exiting cleanly. %d process(es) killed.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), killcount);
-      
-      fflush(LOGFILE);
-      fclose(LOGFILE); 
-      mwTerm();
-      exit(0);
-    }
   }
+}
+
+void die(int pipefds[128][2], int returnpipefds[128][2], int killcount, int sock) {
+  time_t currtime;  
+  char sockmess[MAXMSG];
+  int o;
+  for (o = 0; o < childcount; o++) {
+    kill(childpids[o], SIGKILL);
+    close(pipefds[childcount][0]);
+    close(pipefds[childcount][1]);
+    close(returnpipefds[childcount][0]);
+    close(returnpipefds[childcount][1]);
+  }
+
+  time(&currtime);
+  sprintf(sockmess, "[%.*s] Info: Caught SIGINT.  Exiting cleanly. %d process(es) killed.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), killcount);
+
+  write(sock, &sockmess, MAXMSG);
+  close(sock);
+
+  printf("[%.*s] Info: Caught SIGINT.  Exiting cleanly. %d process(es) killed.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), killcount);
+
+  mwTerm();
+  exit(0);
 }
 
 // Function handling forking code, child process logic

@@ -53,6 +53,7 @@ http://www.tutorialspoint.com/c_standard_library/c_function_signal.htm, 2015-11-
 http://linux.die.net/man/2/gethostname, 2015-11-21
 http://man7.org/linux/man-pages/man3/gethostbyname.3.html, 2015-11-21
 Toby, http://stackoverflow.com/questions/4181784/how-to-set-socket-timeout-in-c-when-making-multiple-connections, 2015-11-22
+Remy Lebeau, http://stackoverflow.com/questions/19127398/socket-programming-read-is-reading-all-of-my-writes, 2015-11-23
 
 Select code taken from:
 http://www.gnu.org/software/libc/manual/html_node/Server-Example.html, 2015-11-21

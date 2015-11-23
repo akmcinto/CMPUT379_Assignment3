@@ -17,10 +17,9 @@ void killprevprocnanny( void );
 int readconfigfile(char *cmdarg);
 void handlesighup(int signum);
 void handlesigint(int signum);
-int read_from_client (int filedes);
 int make_socket(uint16_t port);
 
-uint16_t PORT =  2692; // bind to any free port
+uint16_t PORT =  0; // bind to any free port
 int MAXMSG = 256;
   
 char procname[128][255]; // for saving read from file
@@ -65,6 +64,7 @@ int main(int argc, char *argv[])
   int count; // Number of programs in config file
 
   int clients[36];
+  int informed[36];
   int nclients = 0;
 
   time_t currtime;
@@ -79,22 +79,12 @@ int main(int argc, char *argv[])
   char name[128];
   gethostname(name, sizeof(name));
 
-  time(&currtime);
-  fprintf(INFOFILE, "[%.*s] procnanny server: PID %d on node %s, port %d\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), getpid(), name, PORT);
-  fflush(INFOFILE);
-  fclose(INFOFILE);
-
-  time(&currtime);
-  fprintf(LOGFILE, "[%.*s] Info: Parent process is PID %d\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), getpid());
-  fflush(LOGFILE);
-
   signal(SIGHUP, handlesighup);
   signal(SIGINT, handlesigint);
 
   count = readconfigfile(argv[1]);
 
   // Socket select
-  // Code from http://www.gnu.org/software/libc/manual/html_node/Server-Example.html
   /* Create the socket and set it up to accept connections. */
   memset(&sockname, 0, sizeof(sockname));
   sockname.sin_family = AF_INET;
@@ -114,6 +104,14 @@ int main(int argc, char *argv[])
   printf("Server up and listening for connections on port %d\n",
 	 getPortNumber( sock ) );
 
+  time(&currtime);
+  fprintf(INFOFILE, "[%.*s] procnanny server: PID %d on node %s, port %d\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), getpid(), name, getPortNumber(sock));
+  fflush(INFOFILE);
+  fclose(INFOFILE);
+
+  fprintf(LOGFILE, "[%.*s] Info: Parent process is PID %d\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), getpid());
+  fflush(LOGFILE);
+
 
   /* Initialize the set of active sockets. */
   FD_ZERO(&active_fd_set);
@@ -123,23 +121,12 @@ int main(int argc, char *argv[])
 
   while (1) {
 
-    // Read each line of config file, count is number of lines read (number of process names)
-    if (hupflag == 1) {
-      if (hupmess == 1) {
-	time(&currtime);
-	fprintf(LOGFILE, "[%.*s] Info: Caught SIGHUP.  Configuration file '%s' re-read.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), argv[1]);
-	fflush(LOGFILE);
-
-	printf("[%.*s] Info: Caught SIGHUP.  Configuration file '%s' re-read.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), argv[1]);
-	hupmess = 0;
-      }
-      count = readconfigfile(argv[1]);
-      hupflag = 0;
-    }
-
     read_fd_set = active_fd_set;
-  write_fd_set = active_fd_set;
-    if (select (FD_SETSIZE, &read_fd_set, &write_fd_set, NULL, NULL) < 0) {
+    write_fd_set = active_fd_set;
+    struct timeval timeout;
+    timeout.tv_sec = 5;
+    timeout.tv_usec = 0;
+    if (select (FD_SETSIZE, &read_fd_set, &write_fd_set, NULL, &timeout) < 0) {
       perror ("select");
       exit (EXIT_FAILURE);
     }
@@ -160,33 +147,28 @@ int main(int argc, char *argv[])
 	       "Server: connect from host %s, port %hd.\n",
 	       name, PORT);
       FD_SET (clients[nclients], &active_fd_set);
-
-      write(clients[nclients], &count, sizeof(count));
-      int j;
-      for (j = 0; j < count; j++) {
-	write(clients[nclients], &procname[j], 255);
-	write(clients[nclients], &numsecs[j], sizeof(int));
-      }
-
+      informed[nclients] = 0;
       nclients++;
     }
 
+    // Read each line of config file, count is number of lines read (number of process names)
+    if (hupflag == 1) {
+      if (hupmess == 1) {
+	time(&currtime);
+	fprintf(LOGFILE, "[%.*s] Info: Caught SIGHUP.  Configuration file '%s' re-read.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), argv[1]);
+	fflush(LOGFILE);
+
+	printf("[%.*s] Info: Caught SIGHUP.  Configuration file '%s' re-read.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), argv[1]);
+	hupmess = 0;
+      }
+      count = readconfigfile(argv[1]);
+
+      hupflag = 0;
+    }
 
     int h;
     for(h = 0; h < nclients; h++) {
-
-      if (FD_ISSET (clients [h], &write_fd_set)) {
-	write(clients[h], &count, sizeof(count));
-	int j;
-	for (j = 0; j < count; j++) {
-	  write(clients[h], &procname[j], 255);
-	  write(clients[h], &numsecs[j], sizeof(int));
-	}
-      }
-    }
-
-    for(h = 0; h < nclients; h++) {
-
+      
       if (FD_ISSET (clients [h], &read_fd_set)) {
 	char buffer[MAXMSG];
 	read (clients [h], buffer, MAXMSG);
@@ -195,7 +177,50 @@ int main(int argc, char *argv[])
       }
     }
 
-fflush(LOGFILE);
+    for (h = 0; h < nclients; h++) {
+
+      if (FD_ISSET (clients [h], &write_fd_set)) {
+	if (informed[h] == 0) {
+	  write(clients[h], &count, sizeof(count));
+	  int j;
+	  for (j = 0; j < count; j++) {
+	    write(clients[h], &procname[j], 255);
+	    write(clients[h], &numsecs[j], sizeof(int));
+	  }
+	  informed[h] = 1;
+	}
+      }
+    }
+
+    if (inthandle == 1) {
+
+      int h;
+      for(h = 0; h < nclients; h++) {
+	write(clients[h], "kill", MAXMSG);
+	write(clients[h], "kill", MAXMSG);
+	write(clients[h], "kill", MAXMSG);
+      }
+
+      while (nclients > 0) {
+	for(h = 0; h < nclients; h++) {
+	  char buffer[MAXMSG];
+	  int ret = read(clients[h], buffer, MAXMSG);
+	  if (ret == 0) {
+	    close(clients[h]);
+	    FD_CLR(clients[h], &active_fd_set);
+	    nclients--;
+	  }
+	  else {
+	    fprintf(LOGFILE, "%s", buffer);
+	    fflush(LOGFILE);
+	  }
+	}
+      }
+      fflush(LOGFILE);
+      fclose(LOGFILE);
+      mwTerm();
+      exit(0);
+    }
 
   }
 
@@ -245,30 +270,6 @@ void handlesighup(int signum) {
 
 void handlesigint(int signum) {
   inthandle = 1;
-}
-
-// From http://www.gnu.org/software/libc/manual/html_node/Server-Example.html
-int read_from_client (int filedes) {
-  char buffer[MAXMSG];
-  int nbytes;
-
-  nbytes = read (filedes, buffer, MAXMSG);
-
-  if (nbytes < 0)
-    {
-      /* Read error. */
-      perror ("read");
-      exit (EXIT_FAILURE);
-    }
-  else if (nbytes == 0)
-    /* End-of-file. */
-    return -1;
-  else
-    {
-      /* Data read. */
-      fprintf (stderr, "Server: got message: `%s'\n", buffer);
-      return 0;
-    }
 }
 
 // From http://www.gnu.org/software/libc/manual/html_node/Inet-Example.html#Inet-Example, BOB Beck, and Paul Lu
