@@ -120,8 +120,6 @@ int main(int argc, char *argv[])
   FD_SET(sock, &active_fd_set);
 
   /* Block until input arrives on one or more active sockets. */
-  read_fd_set = active_fd_set;
-  write_fd_set = active_fd_set;
 
   while (1) {
 
@@ -139,121 +137,65 @@ int main(int argc, char *argv[])
       hupflag = 0;
     }
 
-    struct timeval timeout;
-      timeout.tv_sec = 5;
-      timeout.tv_usec = 0;
+    read_fd_set = active_fd_set;
+  write_fd_set = active_fd_set;
     if (select (FD_SETSIZE, &read_fd_set, &write_fd_set, NULL, NULL) < 0) {
       perror ("select");
       exit (EXIT_FAILURE);
     }
 
     /* Service all the sockets with input pending. */
-    //int i;
-    //for (i = 0; i < FD_SETSIZE; ++i) {
-      if (FD_ISSET (sock, &read_fd_set)) {
-	/*char mess[25];
-	  read (sock, &mess, 25);
-	  printf("%s\n", mess);
-	  sleep(2);*/
-	
-	//if (i == sock) {
-	  /* Connection request on original socket. */
-	  int new;
-	  size = sizeof (clientname);
-	  clients[nclients] = accept (sock,
-			(struct sockaddr *) &clientname,
-			&size);
-	  if (clients[nclients] < 0) {
-	    perror ("accept");
-	    exit (EXIT_FAILURE);
-	  }
-	  fprintf (stderr,
-		   "Server: connect from host %s, port %hd.\n",
-		   name, PORT);
-	  FD_SET (clients[nclients], &active_fd_set);
+    if (FD_ISSET (sock, &read_fd_set)) {
 
-	  write(clients[nclients], &count, sizeof(count));
-	  int j;
-	  for (j = 0; j < count; j++) {
-	    write(clients[nclients], &procname[j], 255);
-	    write(clients[nclients], &numsecs[j], sizeof(int));
-	  }
-
-	  nclients++;
-
-	  //}
-	
-	/*else {
-	  // Data arriving on an already-connected socket. 
-	  char buffer[MAXMSG];
-	  printf("Here\n");
-	  read (i, buffer, MAXMSG);
-	  printf("Now\n");
-
-	  fprintf(LOGFILE, "%s\n", buffer);
-	}*/
-	//}
-      
-      /*if (FD_ISSET (i, &write_fd_set)) {
-	if (i == sock) {
-	// Connection request on original socket. 
-	int new;
-	size = sizeof (clientname);
-	new = accept (sock,
-	(struct sockaddr *) &clientname,
-	&size);
-	if (new < 0) {
+      /* Connection request on original socket. */
+      size = sizeof (clientname);
+      clients[nclients] = accept (sock,
+				  (struct sockaddr *) &clientname,
+				  &size);
+      if (clients[nclients] < 0) {
 	perror ("accept");
 	exit (EXIT_FAILURE);
-	}
-	fprintf (stderr,
-	"Server: connect from host %s, port %hd.\n",
-	name, PORT);
-	FD_SET (new, &active_fd_set);
+      }
+      fprintf (stderr,
+	       "Server: connect from host %s, port %hd.\n",
+	       name, PORT);
+      FD_SET (clients[nclients], &active_fd_set);
 
-	write(new, &count, sizeof(count));
-	int j;
-	for (j = 0; j < count; j++) {
-	write(i, &procname[j], 255);
-	write(i, &numsecs[j], sizeof(int));
-	}
-	}
-	else {
-	write(i, &count, sizeof(count));
-	int j;
-	for (j = 0; j < count; j++) {
-	write(i, &procname[j], 255);
-	write(i, &numsecs[j], sizeof(int));
-	}
-	}
-	}*/
+      write(clients[nclients], &count, sizeof(count));
+      int j;
+      for (j = 0; j < count; j++) {
+	write(clients[nclients], &procname[j], 255);
+	write(clients[nclients], &numsecs[j], sizeof(int));
+      }
+
+      nclients++;
     }
 
 
-      int h;
-      for(h = 0; h < nclients; h++) {
+    int h;
+    for(h = 0; h < nclients; h++) {
 
-	if (FD_ISSET (clients [h], &write_fd_set)) {
-	  write(clients[h], &count, sizeof(count));
-	  int j;
-	  for (j = 0; j < count; j++) {
-	    write(clients[h], &procname[j], 255);
-	    write(clients[h], &numsecs[j], sizeof(int));
-	  }
+      if (FD_ISSET (clients [h], &write_fd_set)) {
+	write(clients[h], &count, sizeof(count));
+	int j;
+	for (j = 0; j < count; j++) {
+	  write(clients[h], &procname[j], 255);
+	  write(clients[h], &numsecs[j], sizeof(int));
 	}
       }
+    }
 
-      for(h = 0; h < nclients; h++) {
+    for(h = 0; h < nclients; h++) {
 
-	if (FD_ISSET (clients [h], &read_fd_set)) {
-	  char buffer[MAXMSG];
-	  printf("Here\n");
-	  read (clients [h], buffer, MAXMSG);
-	  printf("Now\n");
-
-	  fprintf(LOGFILE, "%s\n", buffer);
-	}
+      if (FD_ISSET (clients [h], &read_fd_set)) {
+	char buffer[MAXMSG];
+	read (clients [h], buffer, MAXMSG);
+	fprintf(LOGFILE, "%s", buffer);
+	fflush(LOGFILE);
       }
+    }
+
+fflush(LOGFILE);
 
   }
 

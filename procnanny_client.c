@@ -18,7 +18,7 @@ void killprevprocnanny( void );
 void runmonitoring( FILE * );
 void forkfunc(pid_t procid, int numsecs, int pipefd[2], int returnpipefd[2]);
 int readconfigfile(char *cmdarg);
-int getpids(char procname[255], int index, FILE *LOGFILE);
+int getpids(char procname[255], int index, int sock);
 
 int MAXMSG = 256;
 uint16_t MYPORT = 2692; // bind to any free port
@@ -146,7 +146,7 @@ void runmonitoring(FILE *LOGFILE) {
       read(sock, &numsecs, sizeof(int));
 
       // Get corrensponding pids
-      pidcount = getpids(procname, k, LOGFILE);
+      pidcount = getpids(procname, k, sock);
 
       for (j = 0; j < pidcount; j++) { // pids
 	int monitored = 0;
@@ -161,8 +161,7 @@ void runmonitoring(FILE *LOGFILE) {
 	if (monitored == 0) { // if not monitored
 	  // Initialize monitoring in log file
 	  time(&currtime);
-	  /*fprintf(LOGFILE, "[%.*s] Info: Initializing monitoring of process %s (PID %d).\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), procname, procid[j]);
-	    fflush(LOGFILE);*/
+
 	  sprintf(sockmess, "[%.*s] Info: Initializing monitoring of process %s (PID %d).\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), procname, procid[j]);
 
 	  write(sock, &sockmess, MAXMSG);
@@ -260,10 +259,11 @@ void forkfunc(pid_t procid, int numsecs, int pipefd[2], int returnpipefd[2]) {
 }
 
 // For each process name, get associated pids
-int getpids(char procname[255], int index, FILE *LOGFILE) {
+int getpids(char procname[255], int index, int sock) {
   char cmdline[269]; // for creating pgrep command (255 plus extra for command)
   int count = 0;
   FILE *pp;
+  char sockmess[MAXMSG];
 
   sprintf(cmdline, "ps -C %s -o pid=", procname);
   pp = popen(cmdline, "r");
@@ -282,8 +282,8 @@ int getpids(char procname[255], int index, FILE *LOGFILE) {
     if (recorded == 0) {
       time_t currtime;
       time(&currtime);
-      fprintf(LOGFILE, "[%.*s] Info: No '%s' process found.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), procname);
-      fflush(LOGFILE);
+      sprintf(sockmess, "[%.*s] Info: No '%s' process found.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), procname);
+      write(sock, &sockmess, MAXMSG);
       memcpy(alreadyreported[index], procname, 255);
     }
   } else {
