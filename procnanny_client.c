@@ -18,19 +18,19 @@ void killprevprocnanny( void );
 void runmonitoring( FILE * );
 void forkfunc(pid_t procid, int numsecs, int pipefd[2], int returnpipefd[2]);
 int readconfigfile(char *cmdarg);
-int getpids(char procname[128][255], int index, FILE *LOGFILE);
+int getpids(char procname[255], int index, FILE *LOGFILE);
 
 int MAXMSG = 512;
-uint16_t MYPORT = 0; // bind to any free port
-uint16_t serverport;
+uint16_t MYPORT = 2692; // bind to any free port
+int serverport;
 char *servername;
 
 // Global variable declarations
 pid_t childpids[128]; // Save pids of all existing child processes
 int childcount; // number of children currently monitoring a process
 
-char procname[128][255]; // for saving read from file
-int numsecs[128];
+char procname[255]; // for saving read from file
+int numsecs;
 
 pid_t procid[128]; // pids corresonding to each proces in config file
 
@@ -84,8 +84,13 @@ void runmonitoring(FILE *LOGFILE) {
 
   host = gethostbyname(servername);
 
+  if (host == NULL) {
+    perror ("Producer: cannot get host description");
+    exit (1);
+  }
+
   int sock = socket(AF_INET, SOCK_STREAM, 0);
-  //fcntl(sock, F_SETFL, O_NONBLOCK);
+
   if (sock < 0) {
     perror ("Client: cannot open socket");
     exit (1);
@@ -93,15 +98,13 @@ void runmonitoring(FILE *LOGFILE) {
   bzero(&server, sizeof(server));
   bcopy(host->h_addr, & (server.sin_addr), host->h_length);
   server.sin_family = host->h_addrtype;
-  server.sin_port = htons(serverport);
+  server.sin_port = htons(MYPORT);
 
   if (connect (sock, (struct sockaddr*) & server, sizeof (server))) {
     perror ("Producer: cannot connect to server");
     exit (1);
   }
 
-  write(sock, "Hello\n", 6);
-  
   childcount = 0;
 
   // Counter variables
@@ -122,7 +125,7 @@ void runmonitoring(FILE *LOGFILE) {
 	  // Write message to logfile 
 	  time(&currtime);
 	  sprintf(sockmess, "[%.*s] Action: PID %d (%s) killed after exceeding %d seconds.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), allprocids[i], procnamesforlog[i], numsecsperprocess[i]);
-	  write(sock, &sockmess, MAXMSG);
+	  /* write(sock, &sockmess, MAXMSG); */
 	}
 	// Add child pid to list of available ones
 	freeindex++;
@@ -135,10 +138,7 @@ void runmonitoring(FILE *LOGFILE) {
     }
 
     // Get number of processes off of socket
-    printf("Here!\n");
     read(sock, &count, sizeof(int));
-    printf("Here!!\n");
-    printf("%d\n", count);
 
     for (k = 0; k < count; k++) { // names
       read(sock, &procname, 255);
@@ -160,13 +160,15 @@ void runmonitoring(FILE *LOGFILE) {
 	if (monitored == 0) { // if not monitored
 	  // Initialize monitoring in log file
 	  time(&currtime);
-	  fprintf(LOGFILE, "[%.*s] Info: Initializing monitoring of process %s (PID %d).\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), procname[k], procid[j]);
-	  fflush(LOGFILE);
+	  /*fprintf(LOGFILE, "[%.*s] Info: Initializing monitoring of process %s (PID %d).\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), procname, procid[j]);
+	    fflush(LOGFILE);*/
+sprintf(sockmess, "[%.*s] Info: Initializing monitoring of process %s (PID %d).\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), procname, procid[j]);
+write(sock, &sockmess, MAXMSG);
 
 	  if (freeindex > -1) {
 	    allprocids[freeindices[freeindex]] = procid[j];
-	    memcpy(procnamesforlog[freeindices[freeindex]], procname[k], 255);
-	    numsecsperprocess[freeindices[freeindex]] = numsecs[k];
+	    memcpy(procnamesforlog[freeindices[freeindex]], procname, 255);
+	    numsecsperprocess[freeindices[freeindex]] = numsecs;
 
 	    write(pipefds[freeindices[freeindex]][1], &allprocids[freeindices[freeindex]], sizeof(pid_t)); 
 	    write(pipefds[freeindices[freeindex]][1], &numsecsperprocess[freeindices[freeindex]], sizeof(int));
@@ -183,8 +185,8 @@ void runmonitoring(FILE *LOGFILE) {
 	    }  else {
 	      fcntl(*returnpipefds[childcount], F_SETFL, O_NONBLOCK); // Set pipe to not block on read
 	    }   
-	    memcpy(procnamesforlog[childcount], procname[k], 255);  
-	    numsecsperprocess[childcount] = numsecs[k];    
+	    memcpy(procnamesforlog[childcount], procname, 255);  
+	    numsecsperprocess[childcount] = numsecs;    
 	    allprocids[childcount] = procid[j];
 
 	    forkfunc(allprocids[childcount], numsecsperprocess[childcount], 
@@ -256,12 +258,12 @@ void forkfunc(pid_t procid, int numsecs, int pipefd[2], int returnpipefd[2]) {
 }
 
 // For each process name, get associated pids
-int getpids(char procname[128][255], int index, FILE *LOGFILE) {
+int getpids(char procname[255], int index, FILE *LOGFILE) {
   char cmdline[269]; // for creating pgrep command (255 plus extra for command)
   int count = 0;
   FILE *pp;
 
-  sprintf(cmdline, "ps -C %s -o pid=", procname[index]);
+  sprintf(cmdline, "ps -C %s -o pid=", procname);
   pp = popen(cmdline, "r");
   while (fscanf(pp, "%d", &procid[count]) != EOF) {	
     count++;
@@ -271,16 +273,16 @@ int getpids(char procname[128][255], int index, FILE *LOGFILE) {
   int recorded = 0;
   if (count == 0) {
     for (p = 0; p < 128; p++) {
-      if (strcmp(procname[index], alreadyreported[p]) == 0) {
+      if (strcmp(procname, alreadyreported[p]) == 0) {
 	recorded = 1;
       }
     }
     if (recorded == 0) {
       time_t currtime;
       time(&currtime);
-      fprintf(LOGFILE, "[%.*s] Info: No '%s' process found.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), procname[index]);
+      fprintf(LOGFILE, "[%.*s] Info: No '%s' process found.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), procname);
       fflush(LOGFILE);
-      memcpy(alreadyreported[index], procname[index], 255);
+      memcpy(alreadyreported[index], procname, 255);
     }
   } else {
     memcpy(alreadyreported[index], " ", 255);
@@ -288,17 +290,7 @@ int getpids(char procname[128][255], int index, FILE *LOGFILE) {
   return count;
 }
 
-// Read in config file
-int readconfigfile(char *cmdarg) {
-  int count = 0;
-  FILE *f = fopen(cmdarg, "r");
-  /* Reading from conig file */
-  while (fscanf(f, "%s %d", procname[count], &numsecs[count]) != EOF) {
-    // Find PIDs for the program
-    count++;
-  }
-  return count;
-}
+
 
 // Kill any previous instances of procnanny
 void killprevprocnanny() {

@@ -20,7 +20,7 @@ void handlesigint(int signum);
 int read_from_client (int filedes);
 int make_socket(uint16_t port);
 
-uint16_t PORT =  5000; // bind to any free port
+uint16_t PORT =  2692; // bind to any free port
 int MAXMSG = 512;
   
 char procname[128][255]; // for saving read from file
@@ -30,6 +30,24 @@ int numsecs[128];
 int hupflag = 1;
 int hupmess = 0;
 int inthandle = 0;
+
+int getPortNumber( int socketNum )
+{
+  struct sockaddr_in addr;
+  int rval;
+  socklen_t addrLen;
+
+  addrLen = (socklen_t)sizeof( addr );
+
+  /* Use getsockname() to get the details about the socket */
+  rval = getsockname( socketNum, (struct sockaddr*)&addr, &addrLen );
+  if( rval != 0 )
+    perror("getsockname() failed in getPortNumber()");
+
+  /* Note cast and the use of ntohs() */
+  return( (int) ntohs( addr.sin_port ) );
+} /* getPortNumber */
+
 
 int main(int argc, char *argv[])
 {
@@ -41,8 +59,8 @@ int main(int argc, char *argv[])
   // Select variables
   int sock;
   fd_set active_fd_set, read_fd_set, write_fd_set;
-  int i;
   struct sockaddr_in clientname;
+  struct sockaddr_in sockname;
   size_t size;
   int count; // Number of programs in config file
 
@@ -70,22 +88,28 @@ int main(int argc, char *argv[])
   signal(SIGHUP, handlesighup);
   signal(SIGINT, handlesigint);
 
+count = readconfigfile(argv[1]);
+
   // Socket select
   // Code from http://www.gnu.org/software/libc/manual/html_node/Server-Example.html
   /* Create the socket and set it up to accept connections. */
-  sock = make_socket (PORT);
-  if (listen (sock, 1) < 0) {
-    perror ("listen");
-    exit (EXIT_FAILURE);
-  }
+  memset(&sockname, 0, sizeof(sockname));
+  sockname.sin_family = AF_INET;
+  sockname.sin_port = htons(PORT);
+  sockname.sin_addr.s_addr = htonl(INADDR_ANY);
+  sock=socket(AF_INET,SOCK_STREAM | SOCK_NONBLOCK,0);
 
-  if (listen(sock, 3) == -1) {
+  if ( sock == -1)
+    perror("socket failed");
+
+  if (bind(sock, (struct sockaddr *) &sockname, sizeof(sockname)) == -1)
+    perror("bind failed");
+
+  if (listen(sock,3) == -1)
     perror("listen failed");
-  }
 
-  /* Initialize the set of active sockets. */
-  FD_ZERO(&active_fd_set);
-  FD_SET(sock, &active_fd_set);
+  printf("Server up and listening for connections on port %d\n",
+	 getPortNumber( sock ) );
 
   while (1) {
 
@@ -103,6 +127,10 @@ int main(int argc, char *argv[])
       hupflag = 0;
     }
 
+    /* Initialize the set of active sockets. */
+    FD_ZERO(&active_fd_set);
+    FD_SET(sock, &active_fd_set);
+
     /* Block until input arrives on one or more active sockets. */
     read_fd_set = active_fd_set;
     write_fd_set = active_fd_set;
@@ -110,15 +138,18 @@ int main(int argc, char *argv[])
       perror ("select");
       exit (EXIT_FAILURE);
     }
-    printf("!!\n");
 
     /* Service all the sockets with input pending. */
+    int i;
     for (i = 0; i < FD_SETSIZE; ++i) {
-      //printf("%d %d!\n", sock, i);
       if (FD_ISSET (i, &read_fd_set)) {
-	//printf("!!\n");
+
+	/*char mess[25];
+	  read (sock, &mess, 25);
+	  printf("%s\n", mess);
+	  sleep(2);*/
+	
 	if (i == sock) {
-	  //printf("!!!\n");
 	  /* Connection request on original socket. */
 	  int new;
 	  size = sizeof (clientname);
@@ -133,21 +164,29 @@ int main(int argc, char *argv[])
 		   "Server: connect from host %s, port %hd.\n",
 		   name, PORT);
 	  FD_SET (new, &active_fd_set);
+
+	  write(new, &count, sizeof(count));
+	  int j;
+	  for (j = 0; j < count; j++) {
+	    write(new, &procname[j], 255);
+	    write(new, &numsecs[j], sizeof(int));
+	  }
 	}
 	
 	else {
 	  /* Data arriving on an already-connected socket. */
-	  if (read_from_client(i) < 0) {
-	    close (i);
-	    FD_CLR (i, &active_fd_set);
-	  } 
+	  char buffer[MAXMSG];
+
+read (i, buffer, MAXMSG);
+
+	  fprintf(LOGFILE, "%s\n", buffer);
+
+
 	}
       }
       
       if (FD_ISSET (i, &write_fd_set)) {
-	//printf("!!\n");
 	if (i == sock) {
-	  //printf("!!!\n");
 	  /* Connection request on original socket. */
 	  int new;
 	  size = sizeof (clientname);
@@ -171,7 +210,6 @@ int main(int argc, char *argv[])
 	  }
 	}
 	else {
-	  //printf("!!!!\n");
 	  write(i, &count, sizeof(count));
 	  int j;
 	  for (j = 0; j < count; j++) {
@@ -234,9 +272,10 @@ void handlesigint(int signum) {
 // From http://www.gnu.org/software/libc/manual/html_node/Server-Example.html
 int read_from_client (int filedes) {
   char buffer[MAXMSG];
-  int nbytes;
+	  int nbytes;
 
-  nbytes = read (filedes, buffer, MAXMSG);
+	  nbytes = read (filedes, buffer, MAXMSG);
+
   if (nbytes < 0)
     {
       /* Read error. */
