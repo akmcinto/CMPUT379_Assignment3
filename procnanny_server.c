@@ -27,8 +27,8 @@ char procname[128][255]; // for saving read from file
 int numsecs[128];
 
 
-  int clients[36];
-  int nclients = 0;
+int clients[36];
+int nclients = 0;
 fd_set active_fd_set;
 FILE *LOGFILE;
 
@@ -65,10 +65,7 @@ int main(int argc, char *argv[])
   gethostname(name, sizeof(name));
 
   signal(SIGHUP, handlesighup);
- 
   signal(SIGINT, handlesigint);
-
-  //signal(SIGPIPE, SIG_IGN);
 
   count = readconfigfile(argv[1]);
 
@@ -133,7 +130,10 @@ int main(int argc, char *argv[])
     timeout.tv_sec = 5;
     timeout.tv_usec = 0;
     if (select (FD_SETSIZE, &read_fd_set, &write_fd_set, NULL, &timeout) < 0) {
-      
+      timeout.tv_sec = 5;
+      timeout.tv_usec = 0;
+
+      continue;
     }
 
     /* Service all the sockets with input pending. */
@@ -225,29 +225,29 @@ void handlesighup(int signum) {
 }
 
 void handlesigint(int signum) {
-        int h;
-      for(h = 0; h < nclients; h++) {
-	write(clients[h], "sigint", MAXMSG);
-	write(clients[h], "sigint", MAXMSG);
-	write(clients[h], "sigint", MAXMSG);
+  int h;
+  for(h = 0; h < nclients; h++) {
+    write(clients[h], "sigint", MAXMSG);
+    write(clients[h], "sigint", MAXMSG);
+    write(clients[h], "sigint", MAXMSG);
+  }
+  while (nclients > 0) {
+    for(h = 0; h < nclients; h++) {
+      char buffer[MAXMSG];
+      int ret = read(clients[h], buffer, MAXMSG);
+      if (ret == 0) {
+	FD_CLR(clients[h], &active_fd_set);
+	nclients--;
       }
-      while (nclients > 0) {
-	for(h = 0; h < nclients; h++) {
-	  char buffer[MAXMSG];
-	  int ret = read(clients[h], buffer, MAXMSG);
-	  if (ret == 0) {
-	    FD_CLR(clients[h], &active_fd_set);
-	    nclients--;
-	  }
-	  fprintf(LOGFILE, "%s", buffer);
-	  fflush(LOGFILE);
-	  
-	}
-      }
+      fprintf(LOGFILE, "%s", buffer);
       fflush(LOGFILE);
-      fclose(LOGFILE);
-      mwTerm();
-      exit(0);
+	  
+    }
+  }
+  fflush(LOGFILE);
+  fclose(LOGFILE);
+  mwTerm();
+  exit(0);
 }
 
 // From http://www.gnu.org/software/libc/manual/html_node/Inet-Example.html#Inet-Example, BOB Beck, and Paul Lu
