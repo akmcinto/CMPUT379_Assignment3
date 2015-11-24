@@ -139,10 +139,12 @@ void runmonitoring() {
     // Get number of processes off of socket
     read(sock, &count, sizeof(int));
     
+    if (count > 256) {
+      die(pipefds, returnpipefds, killcount, sock);
+    }    
     for (k = 0; k < count; k++) { // names
       read(sock, &procname, sizeof(procname));
       read(sock, &numsecs, sizeof(int));
-
       if (strcmp(procname, "sigint") == 0) {
 	die(pipefds, returnpipefds, killcount, sock);
       }
@@ -199,14 +201,11 @@ void runmonitoring() {
 	}
       }
     }
-
-    sleep(1);
-
+    sleep(3);
   }
 }
 
 void die(int pipefds[128][2], int returnpipefds[128][2], int killcount, int sock) {
-  printf("here");
   time_t currtime;  
   char sockmess[MAXMSG];
   int o;

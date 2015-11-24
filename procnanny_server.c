@@ -49,9 +49,8 @@ int main(int argc, char *argv[])
   fd_set read_fd_set, write_fd_set;
   struct sockaddr_in clientname;
   struct sockaddr_in sockname;
-  size_t size;
+  socklen_t size;
   int count; // Number of programs in config file
-
 
   time_t currtime;
   // Log file
@@ -106,6 +105,8 @@ int main(int argc, char *argv[])
   FD_ZERO(&active_fd_set);
   FD_SET(sock, &active_fd_set);
 
+  write_fd_set = active_fd_set;
+
   /* Block until input arrives on one or more active sockets. */
 
   while (1) {
@@ -121,12 +122,13 @@ int main(int argc, char *argv[])
 	hupmess = 0;
       }
       count = readconfigfile(argv[1]);
-
+      write_fd_set = active_fd_set;
       hupflag = 0;
     }
 
     read_fd_set = active_fd_set;
-    write_fd_set = active_fd_set;
+    //write_fd_set = active_fd_set;
+
     struct timeval timeout;
     timeout.tv_sec = 5;
     timeout.tv_usec = 0;
@@ -136,47 +138,44 @@ int main(int argc, char *argv[])
 
     /* Service all the sockets with input pending. */
     if (FD_ISSET (sock, &read_fd_set)) {
-
       /* Connection request on original socket. */
       size = sizeof (clientname);
-      clients[nclients] = accept (sock,
-				  (struct sockaddr *) &clientname,
-				  &size);
+      clients[nclients] = accept (sock, (struct sockaddr *) &clientname, &size);
       if (clients[nclients] < 0) {
 	
       }
+      FD_SET(clients[nclients], &active_fd_set);
+      FD_SET(clients[nclients], &read_fd_set);
+      FD_SET(clients[nclients], &write_fd_set);
 
-      FD_SET (clients[nclients], &active_fd_set);
       nclients++;
     }
 
     int h;
-    for(h = 0; h < nclients; h++) {
-      
-      if (FD_ISSET (clients [h], &read_fd_set)) {
-	char buffer[MAXMSG];
-	read (clients [h], buffer, MAXMSG);
-	fprintf(LOGFILE, "%s", buffer);
-	fflush(LOGFILE);
-      }
-    }
-
     for (h = 0; h < nclients; h++) {
 
-      if (FD_ISSET (clients [h], &write_fd_set)) {
+      if (FD_ISSET (clients[h], &write_fd_set)) {
 	write(clients[h], &count, sizeof(count));
 	int j;
 	for (j = 0; j < count; j++) {
 	  write(clients[h], &procname[j], 255);
 	  write(clients[h], &numsecs[j], sizeof(int));
 	}
+	FD_CLR(clients[h], &write_fd_set);
       }
     }
     
+    
+    for(h = 0; h < nclients; h++) {
+      
+      if (FD_ISSET (clients[h], &read_fd_set)) {
+	char buffer[MAXMSG];
+	read (clients [h], buffer, MAXMSG);
+	fprintf(LOGFILE, "%s", buffer);
+	fflush(LOGFILE);
 
-    if (inthandle == 1) {
-
-
+	FD_SET(clients[h], &write_fd_set);
+      }
     }
 
   }
@@ -226,7 +225,6 @@ void handlesighup(int signum) {
 }
 
 void handlesigint(int signum) {
-
         int h;
       for(h = 0; h < nclients; h++) {
 	write(clients[h], "sigint", MAXMSG);
