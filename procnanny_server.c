@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <errno.h>
 #include "memwatch.h"
 
 /*********************** Server ***********************/
@@ -18,6 +19,7 @@ int readconfigfile(char *cmdarg);
 void handlesighup(int signum);
 void handlesigint(int signum);
 int make_socket(uint16_t port);
+int getPortNumber( int socketNum );
 
 uint16_t PORT =  0; // bind to any free port
 int MAXMSG = 256;
@@ -29,24 +31,6 @@ int numsecs[128];
 int hupflag = 1;
 int hupmess = 0;
 int inthandle = 0;
-
-int getPortNumber( int socketNum )
-{
-  struct sockaddr_in addr;
-  int rval;
-  socklen_t addrLen;
-
-  addrLen = (socklen_t)sizeof( addr );
-
-  /* Use getsockname() to get the details about the socket */
-  rval = getsockname( socketNum, (struct sockaddr*)&addr, &addrLen );
-  if( rval != 0 )
-    perror("getsockname() failed in getPortNumber()");
-
-  /* Note cast and the use of ntohs() */
-  return( (int) ntohs( addr.sin_port ) );
-} /* getPortNumber */
-
 
 int main(int argc, char *argv[])
 {
@@ -64,7 +48,6 @@ int main(int argc, char *argv[])
   int count; // Number of programs in config file
 
   int clients[36];
-  int informed[36];
   int nclients = 0;
 
   time_t currtime;
@@ -81,6 +64,7 @@ int main(int argc, char *argv[])
 
   signal(SIGHUP, handlesighup);
   signal(SIGINT, handlesigint);
+  signal(SIGPIPE, SIG_IGN);
 
   count = readconfigfile(argv[1]);
 
@@ -121,14 +105,28 @@ int main(int argc, char *argv[])
 
   while (1) {
 
+    // Read each line of config file, count is number of lines read (number of process names)
+    if (hupflag == 1) {
+      if (hupmess == 1) {
+	time(&currtime);
+	fprintf(LOGFILE, "[%.*s] Info: Caught SIGHUP.  Configuration file '%s' re-read.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), argv[1]);
+	fflush(LOGFILE);
+
+	printf("[%.*s] Info: Caught SIGHUP.  Configuration file '%s' re-read.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), argv[1]);
+	hupmess = 0;
+      }
+      count = readconfigfile(argv[1]);
+
+      hupflag = 0;
+    }
+
     read_fd_set = active_fd_set;
     write_fd_set = active_fd_set;
     struct timeval timeout;
     timeout.tv_sec = 5;
     timeout.tv_usec = 0;
     if (select (FD_SETSIZE, &read_fd_set, &write_fd_set, NULL, &timeout) < 0) {
-      perror ("select");
-      exit (EXIT_FAILURE);
+      
     }
 
     /* Service all the sockets with input pending. */
@@ -143,27 +141,9 @@ int main(int argc, char *argv[])
 	perror ("accept");
 	exit (EXIT_FAILURE);
       }
-      fprintf (stderr,
-	       "Server: connect from host %s, port %hd.\n",
-	       name, PORT);
+
       FD_SET (clients[nclients], &active_fd_set);
-      informed[nclients] = 0;
       nclients++;
-    }
-
-    // Read each line of config file, count is number of lines read (number of process names)
-    if (hupflag == 1) {
-      if (hupmess == 1) {
-	time(&currtime);
-	fprintf(LOGFILE, "[%.*s] Info: Caught SIGHUP.  Configuration file '%s' re-read.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), argv[1]);
-	fflush(LOGFILE);
-
-	printf("[%.*s] Info: Caught SIGHUP.  Configuration file '%s' re-read.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), argv[1]);
-	hupmess = 0;
-      }
-      count = readconfigfile(argv[1]);
-
-      hupflag = 0;
     }
 
     int h;
@@ -180,25 +160,23 @@ int main(int argc, char *argv[])
     for (h = 0; h < nclients; h++) {
 
       if (FD_ISSET (clients [h], &write_fd_set)) {
-	if (informed[h] == 0) {
-	  write(clients[h], &count, sizeof(count));
-	  int j;
-	  for (j = 0; j < count; j++) {
-	    write(clients[h], &procname[j], 255);
-	    write(clients[h], &numsecs[j], sizeof(int));
-	  }
-	  informed[h] = 1;
+	write(clients[h], &count, sizeof(count));
+	int j;
+	for (j = 0; j < count; j++) {
+	  write(clients[h], &procname[j], 255);
+	  write(clients[h], &numsecs[j], sizeof(int));
 	}
       }
     }
+    
 
     if (inthandle == 1) {
 
       int h;
       for(h = 0; h < nclients; h++) {
-	write(clients[h], "kill", MAXMSG);
-	write(clients[h], "kill", MAXMSG);
-	write(clients[h], "kill", MAXMSG);
+	write(clients[h], "sigint", MAXMSG);
+	write(clients[h], "sigint", MAXMSG);
+	write(clients[h], "sigint", MAXMSG);
       }
 
       while (nclients > 0) {
@@ -206,14 +184,12 @@ int main(int argc, char *argv[])
 	  char buffer[MAXMSG];
 	  int ret = read(clients[h], buffer, MAXMSG);
 	  if (ret == 0) {
-	    close(clients[h]);
 	    FD_CLR(clients[h], &active_fd_set);
 	    nclients--;
 	  }
-	  else {
-	    fprintf(LOGFILE, "%s", buffer);
-	    fflush(LOGFILE);
-	  }
+	  fprintf(LOGFILE, "%s", buffer);
+	  fflush(LOGFILE);
+	  
 	}
       }
       fflush(LOGFILE);
@@ -302,4 +278,20 @@ int make_socket(uint16_t port) {
   return sock;
 }
 
+int getPortNumber( int socketNum )
+{
+  struct sockaddr_in addr;
+  int rval;
+  socklen_t addrLen;
+
+  addrLen = (socklen_t)sizeof( addr );
+
+  /* Use getsockname() to get the details about the socket */
+  rval = getsockname( socketNum, (struct sockaddr*)&addr, &addrLen );
+  if( rval != 0 )
+    perror("getsockname() failed in getPortNumber()");
+
+  /* Note cast and the use of ntohs() */
+  return( (int) ntohs( addr.sin_port ) );
+} /* getPortNumber */
 

@@ -20,6 +20,7 @@ void forkfunc(pid_t procid, int numsecs, int pipefd[2], int returnpipefd[2]);
 int readconfigfile(char *cmdarg);
 int getpids(char procname[255], int index, int sock);
 void die(int pipefds[128][2], int returnpipefds[128][2], int killcount, int sock);
+int getPortNumber( int socketNum );
 
 int MAXMSG = 256;
 uint16_t MYPORT = 2692; // bind to any free port
@@ -73,6 +74,8 @@ void runmonitoring() {
   ssize_t main_readreturn;
   char rmessage[returnmesssize];
   char sockmess[MAXMSG];
+  char name[128];
+  gethostname(name, sizeof(name));
 
   struct sockaddr_in server;
   struct hostent *host;
@@ -119,7 +122,7 @@ void runmonitoring() {
 	  killcount++;
 	  // Write message to logfile 
 	  time(&currtime);
-	  sprintf(sockmess, "[%.*s] Action: PID %d (%s) killed after exceeding %d seconds.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), allprocids[i], procnamesforlog[i], numsecsperprocess[i]);
+	  sprintf(sockmess, "[%.*s] Action: PID %d (%s) killed after exceeding %d seconds on node %s.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), allprocids[i], procnamesforlog[i], numsecsperprocess[i], name);
 	  
 	  write(sock, &sockmess, MAXMSG);
 	}
@@ -134,14 +137,13 @@ void runmonitoring() {
     }
 
     // Get number of processes off of socket
-    while (count == 0) {    
-      read(sock, &count, sizeof(int));
-    }
+    read(sock, &count, sizeof(int));
+    
     for (k = 0; k < count; k++) { // names
       read(sock, &procname, sizeof(procname));
       read(sock, &numsecs, sizeof(int));
 
-      if (strcmp(procname, "kill") == 0) {
+      if (strcmp(procname, "sigint") == 0) {
 	die(pipefds, returnpipefds, killcount, sock);
       }
 
@@ -162,7 +164,7 @@ void runmonitoring() {
 	  // Initialize monitoring in log file
 	  time(&currtime);
 
-	  sprintf(sockmess, "[%.*s] Info: Initializing monitoring of process %s (PID %d).\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), procname, procid[j]);
+	  sprintf(sockmess, "[%.*s] Info: Initializing monitoring of process %s (PID %d) on node %s.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), procname, procid[j], name);
 
 	  write(sock, &sockmess, MAXMSG);
 
@@ -204,6 +206,7 @@ void runmonitoring() {
 }
 
 void die(int pipefds[128][2], int returnpipefds[128][2], int killcount, int sock) {
+  printf("here");
   time_t currtime;  
   char sockmess[MAXMSG];
   int o;
@@ -267,6 +270,8 @@ int getpids(char procname[255], int index, int sock) {
   int count = 0;
   FILE *pp;
   char sockmess[MAXMSG];
+  char name[128];
+  gethostname(name, sizeof(name));
 
   sprintf(cmdline, "ps -C %s -o pid=", procname);
   pp = popen(cmdline, "r");
@@ -285,7 +290,7 @@ int getpids(char procname[255], int index, int sock) {
     if (recorded == 0) {
       time_t currtime;
       time(&currtime);
-      sprintf(sockmess, "[%.*s] Info: No '%s' process found.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), procname);
+      sprintf(sockmess, "[%.*s] Info: No '%s' process found on node %s.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), procname, name);
       write(sock, &sockmess, MAXMSG);
       memcpy(alreadyreported[index], procname, 255);
     }
@@ -317,3 +322,20 @@ void killprevprocnanny() {
   }
   return;
 }
+
+int getPortNumber( int socketNum )
+{
+  struct sockaddr_in addr;
+  int rval;
+  socklen_t addrLen;
+
+  addrLen = (socklen_t)sizeof( addr );
+
+  /* Use getsockname() to get the details about the socket */
+  rval = getsockname( socketNum, (struct sockaddr*)&addr, &addrLen );
+  if( rval != 0 )
+    perror("getsockname() failed in getPortNumber()");
+
+  /* Note cast and the use of ntohs() */
+  return( (int) ntohs( addr.sin_port ) );
+} /* getPortNumber */
