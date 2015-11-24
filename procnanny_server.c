@@ -9,7 +9,6 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <errno.h>
 #include "memwatch.h"
 
 /*********************** Server ***********************/
@@ -27,6 +26,12 @@ int MAXMSG = 256;
 char procname[128][255]; // for saving read from file
 int numsecs[128];
 
+
+  int clients[36];
+  int nclients = 0;
+fd_set active_fd_set;
+FILE *LOGFILE;
+
 // Signal flags
 int hupflag = 1;
 int hupmess = 0;
@@ -41,19 +46,17 @@ int main(int argc, char *argv[])
 
   // Select variables
   int sock;
-  fd_set active_fd_set, read_fd_set, write_fd_set;
+  fd_set read_fd_set, write_fd_set;
   struct sockaddr_in clientname;
   struct sockaddr_in sockname;
   size_t size;
   int count; // Number of programs in config file
 
-  int clients[36];
-  int nclients = 0;
 
   time_t currtime;
   // Log file
   char *logloc = getenv("PROCNANNYLOGS");
-  FILE *LOGFILE = fopen(logloc, "w");
+  LOGFILE = fopen(logloc, "w");
 
   // Server info
   char *infoloc = getenv("PROCNANNYSERVERINFO");
@@ -63,8 +66,10 @@ int main(int argc, char *argv[])
   gethostname(name, sizeof(name));
 
   signal(SIGHUP, handlesighup);
+ 
   signal(SIGINT, handlesigint);
-  signal(SIGPIPE, SIG_IGN);
+
+  //signal(SIGPIPE, SIG_IGN);
 
   count = readconfigfile(argv[1]);
 
@@ -138,8 +143,7 @@ int main(int argc, char *argv[])
 				  (struct sockaddr *) &clientname,
 				  &size);
       if (clients[nclients] < 0) {
-	perror ("accept");
-	exit (EXIT_FAILURE);
+	
       }
 
       FD_SET (clients[nclients], &active_fd_set);
@@ -172,30 +176,7 @@ int main(int argc, char *argv[])
 
     if (inthandle == 1) {
 
-      int h;
-      for(h = 0; h < nclients; h++) {
-	write(clients[h], "sigint", MAXMSG);
-	write(clients[h], "sigint", MAXMSG);
-	write(clients[h], "sigint", MAXMSG);
-      }
 
-      while (nclients > 0) {
-	for(h = 0; h < nclients; h++) {
-	  char buffer[MAXMSG];
-	  int ret = read(clients[h], buffer, MAXMSG);
-	  if (ret == 0) {
-	    FD_CLR(clients[h], &active_fd_set);
-	    nclients--;
-	  }
-	  fprintf(LOGFILE, "%s", buffer);
-	  fflush(LOGFILE);
-	  
-	}
-      }
-      fflush(LOGFILE);
-      fclose(LOGFILE);
-      mwTerm();
-      exit(0);
     }
 
   }
@@ -245,7 +226,30 @@ void handlesighup(int signum) {
 }
 
 void handlesigint(int signum) {
-  inthandle = 1;
+
+        int h;
+      for(h = 0; h < nclients; h++) {
+	write(clients[h], "sigint", MAXMSG);
+	write(clients[h], "sigint", MAXMSG);
+	write(clients[h], "sigint", MAXMSG);
+      }
+      while (nclients > 0) {
+	for(h = 0; h < nclients; h++) {
+	  char buffer[MAXMSG];
+	  int ret = read(clients[h], buffer, MAXMSG);
+	  if (ret == 0) {
+	    FD_CLR(clients[h], &active_fd_set);
+	    nclients--;
+	  }
+	  fprintf(LOGFILE, "%s", buffer);
+	  fflush(LOGFILE);
+	  
+	}
+      }
+      fflush(LOGFILE);
+      fclose(LOGFILE);
+      mwTerm();
+      exit(0);
 }
 
 // From http://www.gnu.org/software/libc/manual/html_node/Inet-Example.html#Inet-Example, BOB Beck, and Paul Lu

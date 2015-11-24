@@ -200,7 +200,7 @@ void runmonitoring() {
       }
     }
 
-    sleep(5);
+    sleep(1);
 
   }
 }
@@ -278,6 +278,7 @@ int getpids(char procname[255], int index, int sock) {
   while (fscanf(pp, "%d", &procid[count]) != EOF) {	
     count++;
   }
+  pclose(pp);
     
   int p;
   int recorded = 0;
@@ -320,6 +321,7 @@ void killprevprocnanny() {
       }
     }
   }
+  pclose(pni);
   return;
 }
 
