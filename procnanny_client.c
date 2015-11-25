@@ -19,7 +19,7 @@ void runmonitoring();
 void forkfunc(pid_t procid, int numsecs, int pipefd[2], int returnpipefd[2]);
 int readconfigfile(char *cmdarg);
 int getpids(char procname[255], int index, int sock);
-void die(int pipefds[128][2], int returnpipefds[128][2], int killcount, int sock);
+void die(int pipefds[128][2], int returnpipefds[128][2], int killcount, int sock, char name[128]);
 int getPortNumber( int socketNum );
 
 int MAXMSG = 256;
@@ -87,20 +87,20 @@ void runmonitoring() {
     exit (1);
   }
 
-  int sock = socket(AF_INET, SOCK_STREAM, 0);
-
-  if (sock < 0) {
-    perror ("Client: cannot open socket");
-    exit (1);
-  }
   bzero(&server, sizeof(server));
   bcopy(host->h_addr, & (server.sin_addr), host->h_length);
   server.sin_family = host->h_addrtype;
   server.sin_port = htons(serverport);
+  int sock = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+  
+  if (sock < 0) {
+    perror ("Client: cannot open socket");
+    exit (1);
+    }
 
   if (connect (sock, (struct sockaddr*) & server, sizeof (server))) {
-    perror ("Producer: cannot connect to server");
-    exit (1);
+    //perror ("Producer: cannot connect to server");
+    //exit (1);
   }
 
   childcount = 0;
@@ -138,15 +138,16 @@ void runmonitoring() {
 
     // Get number of processes off of socket
     read(sock, &count, sizeof(int));
-    
+    //printf("\n%d\n", count);
     if (count > 256) {
-      die(pipefds, returnpipefds, killcount, sock);
+      die(pipefds, returnpipefds, killcount, sock, name);
     }    
     for (k = 0; k < count; k++) { // names
       read(sock, &procname, sizeof(procname));
       read(sock, &numsecs, sizeof(int));
+      //printf("\n%d\n", numsecs);
       if (strcmp(procname, "sigint") == 0) {
-	die(pipefds, returnpipefds, killcount, sock);
+	die(pipefds, returnpipefds, killcount, sock, name);
       }
 
       // Get corrensponding pids
@@ -205,7 +206,7 @@ void runmonitoring() {
   }
 }
 
-void die(int pipefds[128][2], int returnpipefds[128][2], int killcount, int sock) {
+void die(int pipefds[128][2], int returnpipefds[128][2], int killcount, int sock, char name[128]) {
   time_t currtime;  
   char sockmess[MAXMSG];
   int o;
@@ -218,12 +219,13 @@ void die(int pipefds[128][2], int returnpipefds[128][2], int killcount, int sock
   }
 
   time(&currtime);
-  sprintf(sockmess, "[%.*s] Info: Caught SIGINT.  Exiting cleanly. %d process(es) killed.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), killcount);
+  //sprintf(sockmess, "[%.*s] Info: Caught SIGINT.  Exiting cleanly. %d process(es) killed.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), killcount);
+sprintf(sockmess, "%d %s\n", killcount, name);
 
   write(sock, &sockmess, MAXMSG);
   close(sock);
 
-  printf("[%.*s] Info: Caught SIGINT.  Exiting cleanly. %d process(es) killed.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), killcount);
+  //printf("[%.*s] Info: Caught SIGINT.  Exiting cleanly. %d process(es) killed.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), killcount);
 
   mwTerm();
   exit(0);

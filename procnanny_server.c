@@ -66,6 +66,7 @@ int main(int argc, char *argv[])
 
   signal(SIGHUP, handlesighup);
   signal(SIGINT, handlesigint);
+  signal(SIGPIPE, SIG_IGN);
 
   count = readconfigfile(argv[1]);
 
@@ -90,11 +91,11 @@ int main(int argc, char *argv[])
 	 getPortNumber( sock ) );
 
   time(&currtime);
-  fprintf(INFOFILE, "[%.*s] procnanny server: PID %d on node %s, port %d\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), getpid(), name, getPortNumber(sock));
+  fprintf(LOGFILE, "[%.*s] procnanny server: PID %d on node %s, port %d\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), getpid(), name, getPortNumber(sock));
   fflush(INFOFILE);
   fclose(INFOFILE);
 
-  fprintf(LOGFILE, "[%.*s] Info: Parent process is PID %d\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), getpid());
+  fprintf(INFOFILE, "NODE %s PID %d PORT %d\n", name, getpid(), getPortNumber(sock));
   fflush(LOGFILE);
 
 
@@ -119,7 +120,7 @@ int main(int argc, char *argv[])
 	hupmess = 0;
       }
       count = readconfigfile(argv[1]);
-      write_fd_set = active_fd_set;
+      //write_fd_set = active_fd_set;
       hupflag = 0;
     }
 
@@ -173,8 +174,8 @@ int main(int argc, char *argv[])
 	read (clients [h], buffer, MAXMSG);
 	fprintf(LOGFILE, "%s", buffer);
 	fflush(LOGFILE);
-
 	FD_SET(clients[h], &write_fd_set);
+	
       }
     }
 
@@ -226,6 +227,9 @@ void handlesighup(int signum) {
 
 void handlesigint(int signum) {
   int h;
+  int killcount = 0;
+  char nodes[1024];
+  nodes[0] = ' ';
   for(h = 0; h < nclients; h++) {
     write(clients[h], "sigint", MAXMSG);
     write(clients[h], "sigint", MAXMSG);
@@ -236,14 +240,28 @@ void handlesigint(int signum) {
       char buffer[MAXMSG];
       int ret = read(clients[h], buffer, MAXMSG);
       if (ret == 0) {
+	
+      //} else {
+	//fprintf(LOGFILE, "%s", buffer);
+	//fflush(LOGFILE);
+	int kills = 0;
+	char node[255];
+	sscanf(buffer, "%d %s", &kills, node);
+	killcount += kills;
+	sprintf(nodes, "%s%s ", nodes, node);
+
 	FD_CLR(clients[h], &active_fd_set);
 	nclients--;
-      }
-      fprintf(LOGFILE, "%s", buffer);
-      fflush(LOGFILE);
-	  
+	}
     }
   }
+
+  time_t currtime;
+  time(&currtime);
+  printf("[%.*s] Info: Caught SIGINT.  Exiting cleanly. %d process(es) killed on%s.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), killcount, nodes);
+
+  fprintf(LOGFILE, "[%.*s] Info: Caught SIGINT.  Exiting cleanly. %d process(es) killed on%s\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), killcount, nodes);
+
   fflush(LOGFILE);
   fclose(LOGFILE);
   mwTerm();
