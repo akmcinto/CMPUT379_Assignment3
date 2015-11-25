@@ -138,14 +138,12 @@ void runmonitoring() {
 
     // Get number of processes off of socket
     read(sock, &count, sizeof(int));
-    //printf("\n%d\n", count);
     if (count > 256) {
       die(pipefds, returnpipefds, killcount, sock, name);
     }    
     for (k = 0; k < count; k++) { // names
       read(sock, &procname, sizeof(procname));
       read(sock, &numsecs, sizeof(int));
-      //printf("\n%d\n", numsecs);
       if (strcmp(procname, "sigint") == 0) {
 	die(pipefds, returnpipefds, killcount, sock, name);
       }
@@ -202,7 +200,7 @@ void runmonitoring() {
 	}
       }
     }
-    sleep(3);
+    sleep(1);
   }
 }
 
