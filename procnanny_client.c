@@ -122,7 +122,7 @@ void runmonitoring() {
 	  killcount++;
 	  // Write message to logfile 
 	  time(&currtime);
-	  sprintf(sockmess, "[%.*s] Action: PID %d (%s) killed after exceeding %d seconds on node %s.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), allprocids[i], procnamesforlog[i], numsecsperprocess[i], name);
+	  sprintf(sockmess, "[%.*s] Action: PID %d (%s) on %s killed after exceeding %d seconds.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), allprocids[i], procnamesforlog[i], name, numsecsperprocess[i]);
 	  
 	  write(sock, &sockmess, MAXMSG);
 	}

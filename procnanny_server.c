@@ -17,7 +17,6 @@ void killprevprocnanny( void );
 int readconfigfile(char *cmdarg);
 void handlesighup(int signum);
 void handlesigint(int signum);
-int make_socket(uint16_t port);
 int getPortNumber( int socketNum );
 
 uint16_t PORT =  0; // bind to any free port
@@ -87,8 +86,7 @@ int main(int argc, char *argv[])
   if (listen(sock,36) == -1)
     perror("listen failed");
 
-  printf("Server up and listening for connections on port %d\n",
-	 getPortNumber( sock ) );
+  //printf("Server up and listening for connections on port %d\n", getPortNumber( sock ) );
 
   time(&currtime);
   fprintf(LOGFILE, "[%.*s] procnanny server: PID %d on node %s, port %d\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), getpid(), name, getPortNumber(sock));
@@ -264,7 +262,7 @@ void handlesigint(int signum) {
 
   time_t currtime;
   time(&currtime);
-  printf("[%.*s] Info: Caught SIGINT.  Exiting cleanly. %d process(es) killed on%s.\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), killcount, nodes);
+  printf("[%.*s] Info: Caught SIGINT.  Exiting cleanly. %d process(es) killed on%s\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), killcount, nodes);
 
   fprintf(LOGFILE, "[%.*s] Info: Caught SIGINT.  Exiting cleanly. %d process(es) killed on%s\n", (int) strlen(ctime(&currtime))-1, ctime(&currtime), killcount, nodes);
 
@@ -272,36 +270,6 @@ void handlesigint(int signum) {
   fclose(LOGFILE);
   mwTerm();
   exit(0);
-}
-
-// From http://www.gnu.org/software/libc/manual/html_node/Inet-Example.html#Inet-Example, BOB Beck, and Paul Lu
-int make_socket(uint16_t port) {
-   
-  int sock;
-  struct sockaddr_in sockaddr;
-
-  /* Create the socket. */
-  sock = socket (PF_INET, SOCK_STREAM, 0);
-  if (sock < 0)
-    {
-      perror ("socket");
-      exit (EXIT_FAILURE);
-    }
-
-  /* Give the socket a name. */
-  sockaddr.sin_family = AF_INET;
-  sockaddr.sin_port = htons(port);
-  sockaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-
-  if (sock == -1) {
-    perror("socket failed");
-  }
-  if (bind (sock, (struct sockaddr *) &sockaddr, sizeof (sockaddr)) < 0) {
-    perror ("bind");
-    exit (EXIT_FAILURE);
-  }
-
-  return sock;
 }
 
 int getPortNumber( int socketNum )
